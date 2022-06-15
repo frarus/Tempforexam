@@ -897,61 +897,6 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth):
 #  Feature Pyramid Network Heads
 ############################################################
 
-
-
-
-def build_fpn_mask_graph(rois, feature_maps, image_meta,
-                         pool_size, num_classes, train_bn=True):
-    """Builds the computation graph of the mask head of Feature Pyramid Network.
-
-    rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
-          coordinates.
-    feature_maps: List of feature maps from different layers of the pyramid,
-                  [P2, P3, P4, P5]. Each has a different resolution.
-    image_meta: [batch, (meta data)] Image details. See compose_image_meta()
-    pool_size: The width of the square feature map generated from ROI Pooling.
-    num_classes: number of classes, which determines the depth of the results
-    train_bn: Boolean. Train or freeze Batch Norm layers
-
-    Returns: Masks [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
-    """
-    # ROI Pooling
-    # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-    x = PyramidROIAlign([pool_size, pool_size],
-                        name="roi_align_mask")([rois, image_meta] + feature_maps)
-
-    # Conv layers
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_mask_conv1")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_mask_bn1')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_mask_conv2")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_mask_bn2')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_mask_conv3")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_mask_bn3')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_mask_conv4")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_mask_bn4')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
-                           name="mrcnn_mask_deconv")(x)
-    x = KL.TimeDistributed(KL.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid"),
-                           name="mrcnn_mask")(x)
-    return x
-
-
 def fpn_classifier_graph(rois, feature_maps, image_meta,
                          pool_size, num_classes, train_bn=True,
                          fc_layers_size=1024):
@@ -1007,11 +952,10 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
 
     return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox
 
-def fpn_second_classifier_graph(rois, feature_maps, image_meta,
-                         pool_size, num_classes, train_bn=True,
-                         fc_layers_size=1024):
-    """Builds the computation graph of the feature pyramid network classifier
-    and regressor heads.
+
+def build_fpn_mask_graph(rois, feature_maps, image_meta,
+                         pool_size, num_classes, train_bn=True):
+    """Builds the computation graph of the mask head of Feature Pyramid Network.
 
     rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
           coordinates.
@@ -1021,37 +965,44 @@ def fpn_second_classifier_graph(rois, feature_maps, image_meta,
     pool_size: The width of the square feature map generated from ROI Pooling.
     num_classes: number of classes, which determines the depth of the results
     train_bn: Boolean. Train or freeze Batch Norm layers
-    fc_layers_size: Size of the 2 FC layers
 
-    Returns:
-        logits: [batch, num_rois, NUM_CLASSES] classifier logits (before softmax)
-        probs: [batch, num_rois, NUM_CLASSES] classifier probabilities
- """
+    Returns: Masks [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
+    """
     # ROI Pooling
-    # Shape: [batch, num_rois, POOL_SIZE, POOL_SIZE, channels]
+    # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
     x = PyramidROIAlign([pool_size, pool_size],
-                        name="roi_align_classifier")([rois, image_meta] + feature_maps)
-    # Two 1024 FC layers (implemented with Conv2D for consistency)
-    x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
-                           name="mrcnn_class2_conv1")(x)
-    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_class2_bn1')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-    x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (1, 1)),
-                           name="mrcnn_class2_conv2")(x)
-    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_class2_bn2')(x, training=train_bn)
+                        name="roi_align_mask")([rois, image_meta] + feature_maps)
+
+    # Conv layers
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_mask_conv1")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_mask_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    shared = KL.Lambda(lambda x: K.squeeze(K.squeeze(x, 3), 2),
-                       name="pool_squeeze")(x)
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_mask_conv2")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_mask_bn2')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
 
-    # Classifier head
-    mrcnn_class2_logits = KL.TimeDistributed(KL.Dense(num_classes),
-                                            name='mrcnn_class2_logits')(shared)
-    mrcnn_probs2 = KL.TimeDistributed(KL.Activation("softmax"),
-                                     name="mrcnn_class2")(mrcnn_class2_logits)
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_mask_conv3")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_mask_bn3')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
 
-    return mrcnn_class2_logits, mrcnn_probs2
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_mask_conv4")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_mask_bn4')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
 
+    x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
+                           name="mrcnn_mask_deconv")(x)
+    x = KL.TimeDistributed(KL.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid"),
+                           name="mrcnn_mask")(x)
+    return x
 
 
 ############################################################
@@ -1155,42 +1106,6 @@ def mrcnn_class_loss_graph(target_class_ids, pred_class_logits,
     # Computer loss mean. Use only predictions that contribute
     # to the loss to get a correct mean.
     loss = tf.reduce_sum(loss) / tf.reduce_sum(pred_active)
-    return loss
-
-def mrcnn_second_class_loss_graph(target_class_ids, pred_class_logits,
-                           active_class_ids):
-    """Loss for the classifier head of Mask RCNN.
-
-    target_class_ids: [batch, num_rois]. Integer class IDs. Uses zero
-        padding to fill in the array.
-    pred_class_logits: [batch, num_rois, num_classes]
-    active_class_ids: [batch, num_classes]. Has a value of 1 for
-        classes that are in the dataset of the image, and 0
-        for classes that are not in the dataset.
-    """
-    # During model building, Keras calls this function with
-    # target_class_ids of type float32. Unclear why. Cast it
-    # to int to get around it.
-    target_class_ids = tf.cast(target_class_ids, 'int64')
-
-    # Find predictions of classes that are not in the dataset.
-    pred_class_ids = tf.argmax(pred_class_logits, axis=2)
-    # TODO: Update this line to work with batch > 1. Right now it assumes all
-    #       images in a batch have the same active_class_ids
-    #pred_active = tf.gather(active_class_ids[0], pred_class_ids)
-
-    # Loss
-    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        labels=target_class_ids, logits=pred_class_logits)
-
-    # Erase losses of predictions of classes that are not in the active
-    # classes of the image.
-    loss = loss * pred_active
-    """
-    # Computer loss mean. Use only predictions that contribute
-    # to the loss to get a correct mean.
-    loss = tf.reduce_sum(loss) / tf.reduce_sum(pred_active)
-    """
     return loss
 
 
@@ -1959,9 +1874,6 @@ class MaskRCNN():
             # Normalize coordinates
             gt_boxes = KL.Lambda(lambda x: norm_boxes_graph(
                 x, K.shape(input_image)[1:3]))(input_gt_boxes)
-            #GT for the decision of the biggest wear
-            input_gt_wear = KL.Input(
-                shape=[None], name="input_gt_class_ids", dtype=tf.int32)
             # 3. GT Masks (zero padded)
             # [batch, height, width, MAX_GT_INSTANCES]
             if config.USE_MINI_MASK:
@@ -2058,7 +1970,6 @@ class MaskRCNN():
             active_class_ids = KL.Lambda(
                 lambda x: parse_image_meta_graph(x)["active_class_ids"]
                 )(input_image_meta)
-            active_class_ids2 =[0, 1, 2]
 
             if not config.USE_RPN_ROIS:
                 # Ignore predicted ROIs and use ROIs provided as an input.
@@ -2092,9 +2003,6 @@ class MaskRCNN():
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
 
-            mrcnn_class2_logits, mrcnn_probs2 = fpn_second_classifier_graph(rois, mrcnn_feature_maps, input_image_meta,
-                         config.MASK_POOL_SIZE, num_classes=3, train_bn=config.TRAIN_BN)
-
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
 
@@ -2110,18 +2018,15 @@ class MaskRCNN():
             mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
                 [target_mask, target_class_ids, mrcnn_mask])
 
-            wear_class_loss = KL.Lambda(lambda x: mrcnn_second_class_loss_graph(*x), name="mrcnn_second_class_loss")(
-                [target_class_ids, mrcnn_class2_logits, active_class_ids2])
-
             # Model
             inputs = [input_image, input_image_meta,
-                      input_rpn_match, input_rpn_bbox, input_gt_class_ids, input_gt_boxes, input_gt_masks, input_gt_wear]
+                      input_rpn_match, input_rpn_bbox, input_gt_class_ids, input_gt_boxes, input_gt_masks]
             if not config.USE_RPN_ROIS:
                 inputs.append(input_rois)
             outputs = [rpn_class_logits, rpn_class, rpn_bbox,
                        mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask,
                        rpn_rois, output_rois,
-                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss, wear_class_loss, mrcnn_class2_logits, mrcnn_probs2]
+                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')
         else:
             # Network Heads
@@ -2145,13 +2050,10 @@ class MaskRCNN():
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
-                                              
-            mrcnn_class2_logits, mrcnn_probs2 = fpn_second_classifier_graph(rois, mrcnn_feature_maps, input_image_meta,
-                         config.MASK_POOL_SIZE, num_classes=3, train_bn=config.TRAIN_BN)
 
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox,
-                                 mrcnn_mask, rpn_rois, rpn_class, rpn_bbox, mrcnn_class2_logits, mrcnn_probs2],
+                                 mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
